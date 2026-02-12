@@ -111,9 +111,10 @@ def generate_ai_content(prompt):
                     "content": prompt,
                 }
             ],
-            model="llama3-70b-8192",
+            model="llama-3.3-70b-versatile",
             temperature=0.7,
         )
+        st.toast("Generando con Groq (Llama 3.3)...", icon="🚀")
         return chat_completion.choices[0].message.content
     else:
         # Usar Gemini (Default)
