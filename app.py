@@ -1,5 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
+from groq import Groq
 import os
 from dotenv import load_dotenv
 
@@ -68,34 +69,61 @@ with st.sidebar:
     st.title("⚙️ Configuración")
     
     api_key_input = st.text_input(
-        "Gemini API Key",
+        "API Key (Gemini o Groq)",
         value=st.session_state.api_key,
         type="password",
-        help="Introduce tu clave API de Google Gemini para activar la IA."
+        help="Introduce tu clave API de Google Gemini o Groq (empieza por gsk_)."
     )
     
+    provider = "Desconocido"
     if api_key_input:
         st.session_state.api_key = api_key_input
-        genai.configure(api_key=api_key_input)
-        st.success("API Key configurada")
+        if api_key_input.startswith("gsk_"):
+             provider = "Groq 🚀"
+        else:
+             provider = "Gemini 🧠"
+             genai.configure(api_key=api_key_input)
+        
+        st.success(f"Conectado con {provider}")
     else:
         st.warning("⚠️ Necesitas una API Key para continuar.")
-        st.markdown("[Conseguir API Key](https://aistudio.google.com/app/apikey)")
+        st.markdown("[Conseguir Gemini Key](https://aistudio.google.com/app/apikey) | [Conseguir Groq Key](https://console.groq.com/keys)")
 
     st.markdown("---")
     st.markdown("### Acerca de")
     st.markdown("RunSmart AI optimiza tu entrenamiento diario usando Inteligencia Artificial.")
-    st.markdown("v1.0.0 Streamlit Edition")
+    st.markdown("v1.1.0 Multi-Model Support")
 
-# --- Funciones Auxiliares ---
+# --- Funciones Auxiliares IA ---
 
-def get_gemini_model():
-    return genai.GenerativeModel('gemini-pro')
+def generate_ai_content(prompt):
+    api_key = st.session_state.api_key
+    if not api_key:
+        raise ValueError("API Key no configurada")
+    
+    if api_key.startswith("gsk_"):
+        # Usar Groq
+        client = Groq(api_key=api_key)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="llama3-70b-8192",
+            temperature=0.7,
+        )
+        return chat_completion.choices[0].message.content
+    else:
+        # Usar Gemini (Default)
+        model = genai.GenerativeModel('gemini-pro')
+        response = model.generate_content(prompt)
+        return response.text
 
 def generate_workout(data_context):
-    """Genera el entrenamiento del día usando Gemini"""
+    """Genera el entrenamiento del día usando la IA configurada"""
     try:
-        model = get_gemini_model()
         prompt = f"""
         Actúa como un entrenador de running de élite. Analiza los siguientes datos de un corredor y genera una recomendación de entrenamiento para HOY.
         
@@ -118,8 +146,8 @@ def generate_workout(data_context):
         """
         
         with st.spinner('Analizando tus datos con IA...'):
-            response = model.generate_content(prompt)
-            return response.text
+            return generate_ai_content(prompt)
+            
     except Exception as e:
         return f"Error al generar entrenamiento: {str(e)}"
 
@@ -207,7 +235,6 @@ with tab3:
                 full_response = ""
                 
                 try:
-                    model = get_gemini_model()
                     # Contexto para el chat
                     context_prompt = f"""
                     Eres un asistente experto en running.
@@ -222,13 +249,10 @@ with tab3:
                     Responde de forma breve, útil y directa.
                     """
                     
-                    headers = {'Content-Type': 'application/json'}
-                    response = model.generate_content(context_prompt)
-                    full_response = response.text
+                    full_response = generate_ai_content(context_prompt)
                     message_placeholder.markdown(full_response)
                     
                     # Guardar respuesta
                     st.session_state.chat_history.append({"role": "assistant", "content": full_response})
                 except Exception as e:
                     st.error(f"Error: {e}")
-
