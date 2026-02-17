@@ -3,6 +3,8 @@ import google.generativeai as genai
 from groq import Groq
 import os
 from dotenv import load_dotenv
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # Cargar variables de entorno si existen
 load_dotenv()
@@ -19,8 +21,8 @@ st.set_page_config(
 st.markdown("""
 <style>
     .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
+        /* background-color: #0e1117; handled by theme */
+        /* color: #fafafa; handled by theme */
     }
     .stButton>button {
         background-color: #2ecc71;
@@ -149,8 +151,64 @@ def generate_workout(data_context):
         with st.spinner('Analizando tus datos con IA...'):
             return generate_ai_content(prompt)
             
+            
     except Exception as e:
         return f"Error al generar entrenamiento: {str(e)}"
+
+def load_user_data():
+    """Carga los datos CSV del directorio data/"""
+    data_summary = ""
+    try:
+        data_dir = "data"
+        if not os.path.exists(data_dir):
+            return "No se encontró el directorio de datos."
+
+        files = [f for f in os.listdir(data_dir) if f.endswith('.csv')]
+
+        if not files:
+            return ""
+        
+        for file in files:
+            df = pd.read_csv(os.path.join(data_dir, file))
+            data_summary += f"\n--- {file} ---\n"
+            data_summary += df.to_string(index=False) + "\n"
+            
+        return data_summary
+    except Exception as e:
+        return ""
+
+def generate_race_strategy(race_type, target_time, user_data_context):
+    """Genera una estrategia de carrera con la IA"""
+    try:
+        prompt = f"""
+        Actúa como un entrenador de running de élite especializado en {race_type}.
+        
+        Objetivo del Corredor:
+        - Tipo de Carrera: {race_type}
+        - Tiempo Objetivo (si aplica): {target_time}
+        
+        Datos Históricos y Actuales del Corredor (CSV Data):
+        {user_data_context}
+        
+        GENERA DOS SALIDAS:
+        
+        1. PLAN DE CARRERA DETALLADO (en Markdown):
+           - Desglosa la carrera por tramos (ej. Salida, Medio, Muro, Final).
+           - Estrategia de Ritmos (Pacing).
+           - Estrategia de Nutrición e Hidratación (DETALLADA: qué tomar y cuándo).
+           - Consejos mentales.
+        
+        2. DATOS PARA GRÁFICA (al final, en bloque CSV):
+           - Genera un bloque CSV con las columnas: Km, Ritmo_Objetivo, FC_Objetivo_Estimada, Nutricion_Alert (1 si comer, 0 si no)
+           - Debe cubrir toda la distancia de la carrera.
+           - Encierra este bloque CSV entre etiquetas <CHART_DATA> y </CHART_DATA>.
+        """
+        
+        with st.spinner('Diseñando tu estrategia de carrera...'):
+            return generate_ai_content(prompt)
+            
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # --- Interfaz Principal ---
 
@@ -158,7 +216,8 @@ st.title("🏃 RunSmart AI")
 st.markdown("### Tu entrenador personal inteligente")
 
 # Tabs principales
-tab1, tab2, tab3 = st.tabs(["📊 Datos & Conexión", "🎯 Plan de Hoy", "💬 Chat Assistant"])
+# Tabs principales
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Datos & Conexión", "🎯 Plan de Hoy", "💬 Chat Assistant", "🏆 Plan de Carrera"])
 
 with tab1:
     st.header("Actualiza tu Estado")
@@ -257,3 +316,102 @@ with tab3:
                     st.session_state.chat_history.append({"role": "assistant", "content": full_response})
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+with tab4:
+    st.header("🏆 Generador de Estrategia de Carrera")
+    st.markdown("Diseña tu plan perfecto para Maratón, Ultra o Distancia personalizada.")
+    
+    col_race1, col_race2 = st.columns(2)
+    with col_race1:
+        race_type = st.selectbox("Distancia", ["10K", "Media Maratón", "Maratón", "Ultra 50K", "Ultra 80K+", "Personalizada"])
+        target_time = st.text_input("Tiempo Objetivo (opcional)", placeholder="Ej: 3:30:00")
+    
+    # Estado para datos manuales
+    if 'manual_race_data' not in st.session_state:
+        st.session_state.manual_race_data = {}
+
+    # Cargar datos CSV al inicio
+    csv_data = load_user_data()
+    
+    # Si no hay CSVs, mostramos el formulario manual SIEMPRE (fuera del botón)
+    manual_context = ""
+    if not csv_data:
+        st.info("⚠️ No se detectaron archivos CSV. Por favor, introduce tus datos manualmente para que la IA pueda ayudarte.")
+        with st.expander("📝 Datos del Corredor (Manual)", expanded=True):
+            col_man1, col_man2 = st.columns(2)
+            with col_man1:
+                md_dist = st.text_input("Última carrera (Distancia)", placeholder="Ej: 10K")
+                md_time = st.text_input("Tiempo última carrera", placeholder="Ej: 45:00")
+            with col_man2:
+                md_vol = st.text_input("Volumen Semanal Promedio", placeholder="Ej: 40 km")
+                md_long = st.text_input("Tirada más larga reciente", placeholder="Ej: 18 km")
+            
+            # Guardamos en variable para usar al generar
+            if md_dist and md_time:
+                manual_context = f"Última Carrera: {md_dist} en {md_time}. Volumen Semanal: {md_vol}. Tirada Larga: {md_long}."
+
+    if st.button("Generar Estrategia de Carrera"):
+        if not st.session_state.api_key:
+            st.error("Configura tu API Key primero en la barra lateral.")
+        elif not csv_data and not manual_context:
+             st.error("⚠️ Necesitamos datos para generar el plan. Sube archivos CSV a la carpeta 'data' o rellena los campos manuales arriba.")
+        else:
+             # Combinar datos
+            full_context = f"{st.session_state.user_data_summary}\n\nHISTORIAL:\n{csv_data if csv_data else 'Datos Manuales: ' + manual_context}"
+            
+            response = generate_race_strategy(race_type, target_time, full_context)
+            
+            # Separar texto y datos de gráfica
+            import re
+            chart_match = re.search(r'<CHART_DATA>(.*?)</CHART_DATA>', response, re.DOTALL)
+            
+            plan_text = response
+            if chart_match:
+                csv_block = chart_match.group(1).strip()
+                # Limpiar texto del plan para no mostrar el CSV raw
+                plan_text = response.replace(chart_match.group(0), "")
+                
+                # Procesar Gráfica
+                try:
+                    from io import StringIO
+                    df_chart = pd.read_csv(StringIO(csv_block))
+                    
+                    st.success("¡Estrategia Generada!")
+                    
+                    # Visualización
+                    st.subheader("📈 Tu Ritmo de Carrera")
+                    
+                    # Crear gráfica con matplotlib para más control
+                    fig, ax1 = plt.subplots(figsize=(10, 5))
+                    
+                    color = 'tab:blue'
+                    ax1.set_xlabel('Kilómetros')
+                    ax1.set_ylabel('Ritmo (min/km)', color=color)
+                    # Convertir ritmo a float si es necesario o plotear tal cual si son números
+                    # Asumimos que la IA da ritmo en min/km formato decimal o similar, o intentamos plotear
+                    # Si es formato MM:SS, habría que convertirlo. Le pediremos float a la IA o lo intentamos parsear.
+                    # Para simplificar, le pediremos ritmos decimales o nos arriesgamos.
+                    # Mejor: Pedir ritmo en min/km (decimal) en el prompt o parsear.
+                    # Intentaremos plotear directamente.
+                    
+                    ax1.plot(df_chart['Km'], df_chart['Ritmo_Objetivo'], color=color, label='Ritmo')
+                    ax1.tick_params(axis='y', labelcolor=color)
+                    ax1.invert_yaxis() # Ritmo más bajo es más rápido
+                    
+                    # Marcar nutrición
+                    if 'Nutricion_Alert' in df_chart.columns:
+                        nutrition_points = df_chart[df_chart['Nutricion_Alert'] == 1]
+                        if not nutrition_points.empty:
+                            ax1.scatter(nutrition_points['Km'], nutrition_points['Ritmo_Objetivo'], color='red', s=100, label='Comer/Beber', zorder=5)
+                    
+                    st.pyplot(fig)
+                    
+                    # Mostrar tabla de pasos si se quiere
+                    with st.expander("Ver tabla de pasos detallada"):
+                        st.dataframe(df_chart)
+                        
+                except Exception as e:
+                    st.warning(f"No se pudo generar la gráfica: {e}")
+            
+            st.markdown("## 📝 Tu Plan Detallado")
+            st.markdown(plan_text)
