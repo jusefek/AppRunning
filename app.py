@@ -120,7 +120,7 @@ def generate_ai_content(prompt):
         return chat_completion.choices[0].message.content
     else:
         # Usar Gemini (Default)
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         response = model.generate_content(prompt)
         return response.text
 
